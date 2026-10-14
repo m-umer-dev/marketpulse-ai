@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import productRoutes from "./routes/product.routes.js";
 
 import healthRoutes from "./routes/health.routes.js";
 
@@ -32,6 +33,7 @@ app.use("/api", apiLimiter);
 
 // API routes
 app.use("/api/health", healthRoutes);
+app.use("/api/products", productRoutes);
 
 // Unknown routes return a consistent JSON response
 app.use((req, res) => {
