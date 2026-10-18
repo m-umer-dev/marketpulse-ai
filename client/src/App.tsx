@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   ArrowDownRight,
@@ -62,45 +62,6 @@ const chartData = {
   ],
 };
 
-const products = [
-  {
-    name: "Everyday Sneakers",
-    category: "Footwear",
-    initials: "ES",
-    color: "mint",
-    sales: "1,284",
-    revenue: "$38,520",
-    change: "+18.6%",
-  },
-  {
-    name: "Essential Hoodie",
-    category: "Apparel",
-    initials: "EH",
-    color: "purple",
-    sales: "962",
-    revenue: "$28,860",
-    change: "+12.3%",
-  },
-  {
-    name: "Studio Backpack",
-    category: "Accessories",
-    initials: "SB",
-    color: "orange",
-    sales: "845",
-    revenue: "$25,350",
-    change: "+8.4%",
-  },
-  {
-    name: "Classic Timepiece",
-    category: "Accessories",
-    initials: "CT",
-    color: "blue",
-    sales: "619",
-    revenue: "$18,570",
-    change: "+5.2%",
-  },
-];
-
 const navGroups = [
   {
     label: "WORKSPACE",
@@ -121,13 +82,68 @@ const navGroups = [
   },
 ];
 
+type ApiProduct = {
+  _id: string;
+  name: string;
+  description: string;
+  sku: string;
+  category: string;
+  price: number;
+  cost: number;
+  stock: number;
+  unitsSold: number;
+  status: "active" | "draft" | "archived";
+};
+
 function App() {
   const [period, setPeriod] = useState<keyof typeof chartData>("30D");
   const [activePage, setActivePage] = useState("Overview");
   const [question, setQuestion] = useState("");
   const [showAnswer, setShowAnswer] = useState(false);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState("");
 
   const isOverview = activePage === "Overview";
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadProducts() {
+      try {
+        const response = await fetch("http://localhost:5000/api/products", {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Could not load products from the server.");
+        }
+
+        const result: {
+          success: boolean;
+          data: ApiProduct[];
+        } = await response.json();
+
+        if (!result.success) {
+          throw new Error("The server could not return the products.");
+        }
+
+        setProducts(result.data);
+      } catch (error) {
+        if (error instanceof Error && error.name !== "AbortError") {
+          setProductsError(error.message);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setProductsLoading(false);
+        }
+      }
+    }
+
+    void loadProducts();
+
+    return () => controller.abort();
+  }, []);
 
   return (
     <div className="app-shell">
@@ -604,8 +620,8 @@ function App() {
           <section className="panel products-panel">
             <div className="panel-heading products-heading">
               <div>
-                <h2>Top performing products</h2>
-                <p>See what's driving your store's revenue.</p>
+                <h2>Products</h2>
+                <p>Products loaded from your MarketPulse AI database.</p>
               </div>
               <button
                 className="text-link"
@@ -614,59 +630,101 @@ function App() {
                 View all products <span>→</span>
               </button>
             </div>
+
             <div className="table-scroll">
               <table>
                 <thead>
                   <tr>
                     <th>PRODUCT</th>
                     <th>UNITS SOLD</th>
-                    <th>REVENUE</th>
-                    <th>GROWTH</th>
+                    <th>PRICE</th>
+                    <th>STOCK</th>
                     <th>
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
                 </thead>
+
                 <tbody>
-                  {products.map((product) => (
-                    <tr key={product.name}>
-                      <td>
-                        <div className="product-cell">
-                          <div className={`product-thumb ${product.color}`}>
-                            {product.initials}
-                          </div>
-                          <div>
-                            <strong>{product.name}</strong>
-                            <small>{product.category}</small>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="numeric-cell">{product.sales}</td>
-                      <td className="numeric-cell revenue-cell">
-                        {product.revenue}
-                      </td>
-                      <td>
-                        <span className="table-growth">
-                          <ArrowUpRight size={13} />
-                          {product.change}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          className="row-menu"
-                          aria-label={`More options for ${product.name}`}
-                        >
-                          ···
-                        </button>
+                  {productsLoading ? (
+                    <tr>
+                      <td colSpan={5}>Loading products...</td>
+                    </tr>
+                  ) : productsError ? (
+                    <tr>
+                      <td colSpan={5}>
+                        Could not load products: {productsError}
                       </td>
                     </tr>
-                  ))}
+                  ) : products.length === 0 ? (
+                    <tr>
+                      <td colSpan={5}>
+                        No products found. Add a product to get started.
+                      </td>
+                    </tr>
+                  ) : (
+                    products.map((product, index) => {
+                      const initials = product.name
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((word) => word[0].toUpperCase())
+                        .join("");
+
+                      const colors = ["mint", "purple", "orange", "blue"];
+                      const color = colors[index % colors.length];
+
+                      return (
+                        <tr key={product._id}>
+                          <td>
+                            <div className="product-cell">
+                              <div className={`product-thumb ${color}`}>
+                                {initials}
+                              </div>
+                              <div>
+                                <strong>{product.name}</strong>
+                                <small>{product.category}</small>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="numeric-cell">
+                            {product.unitsSold.toLocaleString()}
+                          </td>
+
+                          <td className="numeric-cell revenue-cell">
+                            {product.price.toLocaleString("en-US", {
+                              style: "currency",
+                              currency: "USD",
+                            })}
+                          </td>
+
+                          <td className="numeric-cell">
+                            {product.stock.toLocaleString()}
+                          </td>
+
+                          <td>
+                            <button
+                              className="row-menu"
+                              aria-label={`More options for ${product.name}`}
+                              type="button"
+                            >
+                              ···
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
+
             <div className="table-footer">
               <span>
-                Showing <strong>4</strong> sample products
+                Showing <strong>{products.length}</strong>{" "}
+                {products.length === 1 ? "product" : "products"} from your
+                database
               </span>
               <button onClick={() => setActivePage("Products")}>
                 Explore product analytics <span>→</span>
