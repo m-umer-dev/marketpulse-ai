@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Activity,
   ArrowDownRight,
@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   MessageSquareText,
   Package,
+  Plus,
   Search,
   Settings2,
   ShoppingBag,
@@ -18,6 +19,7 @@ import {
   Upload,
   Users,
   Wallet,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -82,6 +84,30 @@ const navGroups = [
   },
 ];
 
+type ProductFormState = {
+  name: string;
+  sku: string;
+  category: string;
+  description: string;
+  price: string;
+  cost: string;
+  stock: string;
+  unitsSold: string;
+  status: "active" | "draft" | "archived";
+};
+
+const emptyProductForm: ProductFormState = {
+  name: "",
+  sku: "",
+  category: "",
+  description: "",
+  price: "",
+  cost: "",
+  stock: "",
+  unitsSold: "0",
+  status: "active",
+};
+
 type ApiProduct = {
   _id: string;
   name: string;
@@ -103,6 +129,100 @@ function App() {
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState("");
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [productForm, setProductForm] =
+    useState<ProductFormState>(emptyProductForm);
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [saveProductError, setSaveProductError] = useState("");
+
+  function closeAddProduct() {
+    if (savingProduct) return;
+    setShowAddProduct(false);
+    setProductForm(emptyProductForm);
+    setSaveProductError("");
+  }
+
+  async function handleAddProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaveProductError("");
+
+    const payload = {
+      name: productForm.name.trim(),
+      sku: productForm.sku.trim(),
+      category: productForm.category.trim(),
+      description: productForm.description.trim(),
+      price: Number(productForm.price),
+      cost: Number(productForm.cost),
+      stock: Number(productForm.stock),
+      unitsSold: Number(productForm.unitsSold || 0),
+      status: productForm.status,
+    };
+
+    if (!payload.name || !payload.sku || !payload.category) {
+      setSaveProductError(
+        "Please complete the product name, SKU, and category.",
+      );
+      return;
+    }
+
+    if (
+      [payload.price, payload.cost, payload.stock, payload.unitsSold].some(
+        (value) => !Number.isFinite(value) || value < 0,
+      )
+    ) {
+      setSaveProductError(
+        "Price, cost, stock, and units sold must be valid non-negative numbers.",
+      );
+      return;
+    }
+
+    if (
+      !Number.isInteger(payload.stock) ||
+      !Number.isInteger(payload.unitsSold)
+    ) {
+      setSaveProductError("Stock and units sold must be whole numbers.");
+      return;
+    }
+
+    setSavingProduct(true);
+    try {
+      const response = await fetch("http://localhost:5000/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result: {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        data?: ApiProduct;
+      } = await response.json();
+
+      if (!response.ok || !result.success || !result.data) {
+        throw new Error(
+          result.message ||
+            result.error ||
+            (response.status === 409
+              ? "A product with this SKU already exists."
+              : "Could not save the product. Please try again."),
+        );
+      }
+
+      setProducts((currentProducts) => [result.data!, ...currentProducts]);
+      setProductsError("");
+      setProductForm(emptyProductForm);
+      setShowAddProduct(false);
+    } catch (error) {
+      setSaveProductError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while saving the product.",
+      );
+    } finally {
+      setSavingProduct(false);
+    }
+  }
 
   const isOverview = activePage === "Overview";
 
@@ -623,12 +743,24 @@ function App() {
                 <h2>Products</h2>
                 <p>Products loaded from your MarketPulse AI database.</p>
               </div>
-              <button
-                className="text-link"
-                onClick={() => setActivePage("Products")}
-              >
-                View all products <span>→</span>
-              </button>
+              <div className="products-heading-actions">
+                <button
+                  className="button-primary add-product-button"
+                  type="button"
+                  onClick={() => {
+                    setSaveProductError("");
+                    setShowAddProduct(true);
+                  }}
+                >
+                  <Plus size={15} /> Add product
+                </button>
+                <button
+                  className="text-link"
+                  onClick={() => setActivePage("Products")}
+                >
+                  View all products <span>→</span>
+                </button>
+              </div>
             </div>
 
             <div className="table-scroll">
@@ -744,6 +876,239 @@ function App() {
           </footer>
         </div>
       </main>
+
+      {showAddProduct && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeAddProduct();
+          }}
+        >
+          <section
+            className="product-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-product-title"
+          >
+            <div className="product-modal-header">
+              <div>
+                <span className="modal-eyebrow">PRODUCT CATALOG</span>
+                <h2 id="add-product-title">Add a product</h2>
+                <p>Enter the details below to add it to your database.</p>
+              </div>
+              <button
+                className="icon-button modal-close"
+                type="button"
+                aria-label="Close add product dialog"
+                onClick={closeAddProduct}
+                disabled={savingProduct}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form className="product-form" onSubmit={handleAddProduct}>
+              <div className="form-field">
+                <label htmlFor="product-name">
+                  Product name <span>*</span>
+                </label>
+                <input
+                  id="product-name"
+                  name="name"
+                  value={productForm.name}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, name: e.target.value })
+                  }
+                  placeholder="e.g. Wireless Headphones"
+                  maxLength={120}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-field">
+                  <label htmlFor="product-sku">
+                    SKU <span>*</span>
+                  </label>
+                  <input
+                    id="product-sku"
+                    name="sku"
+                    value={productForm.sku}
+                    onChange={(e) =>
+                      setProductForm({ ...productForm, sku: e.target.value })
+                    }
+                    placeholder="e.g. MP-HEAD-002"
+                    maxLength={60}
+                    required
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="product-category">
+                    Category <span>*</span>
+                  </label>
+                  <input
+                    id="product-category"
+                    name="category"
+                    value={productForm.category}
+                    onChange={(e) =>
+                      setProductForm({
+                        ...productForm,
+                        category: e.target.value,
+                      })
+                    }
+                    placeholder="e.g. Electronics"
+                    maxLength={80}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="product-description">Description</label>
+                <textarea
+                  id="product-description"
+                  name="description"
+                  value={productForm.description}
+                  onChange={(e) =>
+                    setProductForm({
+                      ...productForm,
+                      description: e.target.value,
+                    })
+                  }
+                  placeholder="A short description of this product..."
+                  maxLength={1000}
+                  rows={3}
+                />
+              </div>
+
+              <div className="form-row form-row-four">
+                <div className="form-field">
+                  <label htmlFor="product-price">
+                    Price (USD) <span>*</span>
+                  </label>
+                  <input
+                    id="product-price"
+                    name="price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={productForm.price}
+                    onChange={(e) =>
+                      setProductForm({ ...productForm, price: e.target.value })
+                    }
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="product-cost">
+                    Cost (USD) <span>*</span>
+                  </label>
+                  <input
+                    id="product-cost"
+                    name="cost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={productForm.cost}
+                    onChange={(e) =>
+                      setProductForm({ ...productForm, cost: e.target.value })
+                    }
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="product-stock">
+                    Stock <span>*</span>
+                  </label>
+                  <input
+                    id="product-stock"
+                    name="stock"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={productForm.stock}
+                    onChange={(e) =>
+                      setProductForm({ ...productForm, stock: e.target.value })
+                    }
+                    placeholder="0"
+                    required
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="product-units-sold">Units sold</label>
+                  <input
+                    id="product-units-sold"
+                    name="unitsSold"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={productForm.unitsSold}
+                    onChange={(e) =>
+                      setProductForm({
+                        ...productForm,
+                        unitsSold: e.target.value,
+                      })
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="product-status">Status</label>
+                <select
+                  id="product-status"
+                  name="status"
+                  value={productForm.status}
+                  onChange={(e) =>
+                    setProductForm({
+                      ...productForm,
+                      status: e.target.value as ProductFormState["status"],
+                    })
+                  }
+                >
+                  <option value="active">Active</option>
+                  <option value="draft">Draft</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+
+              {saveProductError && (
+                <p className="form-error" role="alert">
+                  {saveProductError}
+                </p>
+              )}
+
+              <div className="product-form-actions">
+                <button
+                  className="button-secondary"
+                  type="button"
+                  onClick={closeAddProduct}
+                  disabled={savingProduct}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="button-primary"
+                  type="submit"
+                  disabled={savingProduct}
+                >
+                  {savingProduct ? (
+                    "Saving product..."
+                  ) : (
+                    <>
+                      <Plus size={15} /> Save product
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
